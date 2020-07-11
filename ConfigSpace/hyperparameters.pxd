@@ -26,6 +26,7 @@ cdef class NumericalHyperparameter(Hyperparameter):
     cdef public upper
     cdef public q
     cdef public log
+    cdef public log_base
     cdef public _lower
     cdef public _upper
     cpdef int compare(self, value: Union[int, float, str], value2: Union[int, float, str])

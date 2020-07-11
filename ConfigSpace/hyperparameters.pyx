@@ -382,7 +382,8 @@ cdef class IntegerHyperparameter(NumericalHyperparameter):
 
 cdef class UniformFloatHyperparameter(FloatHyperparameter):
     def __init__(self, name: str, lower: Union[int, float], upper: Union[int, float],
-                 default_value: Union[int, float, None] = None, q: Union[int, float, None] = None, log: bool = False,
+                 default_value: Union[int, float, None] = None, q: Union[int, float, None] = None,
+                 log: bool = False, log_base: float = 10,
                  meta: Optional[Dict]=None) -> None:
         """
         A float hyperparameter.
@@ -416,6 +417,8 @@ cdef class UniformFloatHyperparameter(FloatHyperparameter):
         log : bool, optional
             If ``True``, the values of the hyperparameter will be sampled
             on a logarithmic scale. Default to ``False``
+        log_base: float, optional
+            The base of logrithm.
         meta : Dict, optional
             Field for holding meta data provided by the user.
             Not used by the configuration space.
@@ -425,6 +428,7 @@ cdef class UniformFloatHyperparameter(FloatHyperparameter):
         self.upper = float(upper)
         self.q = float(q) if q is not None else None
         self.log = bool(log)
+        self.log_base = float(log_base) if log_base is not None else None
 
         if self.lower >= self.upper:
             raise ValueError("Upper bound %f must be larger than lower bound "
@@ -438,14 +442,15 @@ cdef class UniformFloatHyperparameter(FloatHyperparameter):
         self.default_value = self.check_default(default_value)
 
         if self.log:
+            assert self.log_base is not None, 'You must set log_base if log==True.'
             if self.q is not None:
                 lower = self.lower - (np.float64(self.q) / 2. + 0.0001)
                 upper = self.upper + (np.float64(self.q) / 2. - 0.0001)
             else:
                 lower = self.lower
                 upper = self.upper
-            self._lower = np.log(lower)
-            self._upper = np.log(upper)
+            self._lower = np.log(lower) / np.log(self.log_base)
+            self._upper = np.log(upper) / np.log(self.log_base)
         else:
             if self.q is not None:
                 self._lower = self.lower - (self.q / 2. + 0.0001)
@@ -471,7 +476,7 @@ cdef class UniformFloatHyperparameter(FloatHyperparameter):
                        (self.name, repr(self.lower), repr(self.upper),
                         repr(self.default_value)))
         if self.log:
-            repr_str.write(", on log-scale")
+            repr_str.write(f", on log-scale (base={self.log_base})")
         if self.q is not None:
             repr_str.write(", Q: %s" % str(self.q))
         repr_str.seek(0)
@@ -524,7 +529,7 @@ cdef class UniformFloatHyperparameter(FloatHyperparameter):
             raise ValueError('Vector %s contains NaN\'s' % vector)
         vector = vector * (self._upper - self._lower) + self._lower
         if self.log:
-            vector = np.exp(vector)
+            vector = np.power(self.log_base, vector)
         if self.q is not None:
             vector = np.rint((vector - self.lower) / self.q) * self.q + self.lower
             vector = np.minimum(vector, self.upper)
@@ -536,7 +541,7 @@ cdef class UniformFloatHyperparameter(FloatHyperparameter):
             raise ValueError('Number %s is NaN' % scalar)
         scalar = scalar * (self._upper - self._lower) + self._lower
         if self.log:
-            scalar = math.exp(scalar)
+            scalar = self.log_base ** scalar
         if self.q is not None:
             scalar = round((scalar - self.lower) / self.q) * self.q + self.lower
             scalar = min(scalar, self.upper)
@@ -548,7 +553,7 @@ cdef class UniformFloatHyperparameter(FloatHyperparameter):
         if vector is None:
             return np.NaN
         if self.log:
-            vector = np.log(vector)
+            vector = np.log(vector) / np.log(self.log_base)
         vector = (vector - self._lower) / (self._upper - self._lower)
         vector = np.minimum(1.0, vector)
         vector = np.maximum(0.0, vector)
@@ -579,7 +584,8 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
     cdef public sigma
 
     def __init__(self, name: str, mu: Union[int, float], sigma: Union[int, float],
-                 default_value: Union[None, float] = None, q: Union[int, float, None] = None, log: bool = False,
+                 default_value: Union[None, float] = None, q: Union[int, float, None] = None,
+                 log: bool = False, log_base: float = 10,
                  meta: Optional[Dict]=None) -> None:
         """
         A float hyperparameter.
@@ -613,6 +619,8 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
         log : bool, optional
             If ``True``, the values of the hyperparameter will be sampled
             on a logarithmic scale. Default to ``False``
+        log_base : float, optional
+            Base of logrithm.
         meta : Dict, optional
             Field for holding meta data provided by the user.
             Not used by the configuration space.
@@ -622,6 +630,7 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
         self.sigma = float(sigma)
         self.q = float(q) if q is not None else None
         self.log = bool(log)
+        self.log_base = float(log_base) if log_base is not None else None
         self.default_value = self.check_default(default_value)
         self.normalized_default_value = self._inverse_transform(self.default_value)
 
@@ -631,7 +640,7 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
                        (self.name, repr(self.mu), repr(self.sigma),
                         repr(self.default_value)))
         if self.log:
-            repr_str.write(", on log-scale")
+            repr_str.write(f", on log-scale (log_base={self.log_base})")
         if self.q is not None:
             repr_str.write(", Q: %s" % str(self.q))
         repr_str.seek(0)
@@ -663,6 +672,7 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
                     self.mu == other.mu and
                     self.sigma == other.sigma and
                     self.log == other.log and
+                    self.log_base == other.log_base and
                     self.q == other.q
                 )
 
@@ -673,6 +683,7 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
                     self.mu != other.mu or
                     self.sigma != other.sigma or
                     self.log != other.log or
+                    self.log_base != other.log_base or
                     self.q != other.q
                 )
 
@@ -685,11 +696,12 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
             mu=self.mu,
             sigma=self.sigma,
             log=self.log,
+            log_base=self.log_base,
             q=self.q,
         )
 
     def __hash__(self):
-        return hash((self.name, self.mu, self.sigma, self.log, self.q))
+        return hash((self.name, self.mu, self.sigma, self.log, self.log_base, self.q))
 
     def to_uniform(self, z: int = 3) -> 'UniformFloatHyperparameter':
         return UniformFloatHyperparameter(self.name,
@@ -697,7 +709,7 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
                                           self.mu + (z * self.sigma),
                                           default_value=int(
                                               np.round(self.default_value, 0)),
-                                          q=self.q, log=self.log)
+                                          q=self.q, log=self.log, log_base=self.log_base)
 
     def check_default(self, default_value: Union[int, float]) -> Union[int, float]:
         if default_value is None:
@@ -732,7 +744,7 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
         if np.isnan(vector).any():
             raise ValueError('Vector %s contains NaN\'s' % vector)
         if self.log:
-            vector = np.exp(vector)
+            vector = np.power(self.log_base, vector)
         if self.q is not None:
             vector = np.rint(vector / self.q) * self.q
         return vector
@@ -741,7 +753,7 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
         if scalar != scalar:
             raise ValueError('Number %s is NaN' % scalar)
         if self.log:
-            scalar = math.exp(scalar)
+            scalar = self.log_base ** scalar
         if self.q is not None:
             scalar = round(scalar / self.q) * self.q
         return scalar
@@ -751,7 +763,7 @@ cdef class NormalFloatHyperparameter(FloatHyperparameter):
             return np.NaN
 
         if self.log:
-            vector = np.log(vector)
+            vector = np.log(vector) / np.log(self.log_base)
         return vector
 
     def get_neighbors(self, value: float, rs: np.random.RandomState, number: int = 4, transform: bool = False) -> List[float]:
